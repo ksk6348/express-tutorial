@@ -5,16 +5,16 @@ const async = require('async');
 const { check,validationResult } = require('express-validator/check');
 const { sanitizeBody } = require('express-validator/filter');
 
-exports.author_list = function(req, res) {
+exports.author_list = function(req, res, next) {
   Author.find()
     .sort([['family_name', 'ascending']])
     .exec(function (err, author_list) {
-      if (err) {return res.send(err);}
+      if (err) {res.next(err);}
       res.json(author_list);
     })
 };
 
-exports.author_detail = function(req, res) {
+exports.author_detail = function(req, res, next) {
   async.parallel({
     author: function (callback) {
       Author.findById(req.params.id)
@@ -25,10 +25,11 @@ exports.author_detail = function(req, res) {
         .exec(callback);
     }
   }, function (err, results) {
-    if (err) {return res.status(400).json(err);}
+    if (err) {next(err);}
     if (results.author == null) {
       const err = new Error('author not found');
-      return res.status(404).json(err);
+      err.status = 404;
+      next(err);
     }
     console.log(results.author);
     const author_detail = Object.assign({}, results.author._doc, { books: results.author_books});
@@ -51,7 +52,8 @@ exports.author_create = [
     const errors = validationResult(req);
 
     if (!errors.isEmpty()) {
-      return res.status(400).json(errors)
+      errors.status = 400;
+      next(errors)
     }
     else {
       const author = new Author(
@@ -63,16 +65,16 @@ exports.author_create = [
         }
       );
       author.save(function (err) {
-        if (err) {return res.status(400).json(err); }
+        if (err) { res.next(err); }
         res.status(201).json(author)
       })
     }
   }
 ];
 
-exports.author_delete = function(req, res) {
+exports.author_delete = function(req, res, next) {
   Author.findByIdAndRemove(req.params.id, function deleteAuthor(err) {
-    if (err) { return res.status(500).json(err); }
+    if (err) { next(err); }
     res.json({})
   })
 };
@@ -92,10 +94,11 @@ exports.author_update = [
     const errors = validationResult(req);
 
     if (!errors.isEmpty()) {
-      return res.status(400).json(errors)
+      errors.status = 400;
+      next(errors)
     }
     Author.findByIdAndUpdate(req.params.id, req.body, { new: true }, function updateAuthor(err, result) {
-      if (err) { return res.status(500).json(err); }
+      if (err) { next(err); }
       res.json(result)
     })
   }

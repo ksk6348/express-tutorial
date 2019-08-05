@@ -5,17 +5,17 @@ const validator = require('express-validator');
 
 
 // Display list of all Genre.
-exports.genre_list = function(req, res) {
+exports.genre_list = function(req, res, next) {
   Genre.find()
     .sort([['name', 'ascending']])
     .exec(function (err, genre_list) {
-      if (err) { return res.status(500).json(err); }
+      if (err) { next(err); }
       res.json(genre_list);
     })
 };
 
 // Display detail page for a specific Genre.
-exports.genre_detail = function(req, res) {
+exports.genre_detail = function(req, res, next) {
   async.parallel({
     genre: function (callback) {
       Genre.findById(req.params.id)
@@ -26,10 +26,11 @@ exports.genre_detail = function(req, res) {
         .exec(callback);
     }
   }, function (err, results) {
-    if (err) {return res.status(500).json(err);}
+    if (err) {next(err);}
     if (results.genre == null) {
       const err = new Error('Genre not found');
-      return res.status(404).json(err);
+      err.status = 404;
+      next(err);
     }
     const genreDetail = Object.assign({}, results.genre._doc, { books: results.genre_books });
     res.json(genreDetail)
@@ -38,29 +39,30 @@ exports.genre_detail = function(req, res) {
 
 // Handle Genre create on POST.
 exports.genre_create = [
-  validator.body('name', 'Genre name required').isLength({min: 1}).trim(),
+  validator.check('name', 'Genre name required').isLength({min: 1}).trim(),
   validator.sanitizeBody('name').escape(),
   (req, res, next) => {
     const errors = validator.validationResult(req);
-    const genre = new Genre(
-      {name: req.body.name}
-    );
     if (!errors.isEmpty()) {
-      res.render('genre_form', {title: 'Create Genre', genre: genre, errors: errors.array()});
-      return;
+      errors.status = 400;
+      next(errors);
     }
     else {
+      const genre = new Genre(
+        {name: req.body.name}
+      );
       Genre.findOne({'name': req.body.name})
         .exec(function(err, found_genre) {
-          if (err) {return next(err);}
-
+          if (err) {next(err);}
           if (found_genre) {
-            res.redirect(found_genre.url)
+            const err = new Error(`Genre ${genre.name} is existed`);
+            err.status = 404;
+            next(err)
           }
           else {
             genre.save(function (err) {
-              if (err) {return next(err);}
-              res.redirect(genre.url);
+              if (err) {next(err);}
+              return res.json(genre);
             })
           }
         })
@@ -71,10 +73,25 @@ exports.genre_create = [
 
 // Handle Genre delete on POST.
 exports.genre_delete = function(req, res) {
-  res.send('NOT IMPLEMENTED: Genre delete POST');
+  Genre.findByIdAndRemove(req.params.id, function deleteGenre(err) {
+    if (err) {next(err);}
+    res.json({})
+  })
 };
 
 // Handle Genre update on PUT.
-exports.genre_update = function(req, res) {
-  res.send('NOT IMPLEMENTED: Genre update POST');
-};
+exports.genre_update = [
+  validator.check('name', 'Genre name required').isLength({min: 1}).trim(),
+  validator.sanitizeBody('name').escape(),
+  (req, res, next) => {
+    const errors = validator.validationResult(req);
+    if (!errors.isEmpty()) {
+      errors.status = 400;
+      next(errors);
+    }
+    Genre.findByIdAndUpdate(req.params.id, req.body, { new: true}, function (err, result) {
+      if (err) { next(err); }
+      res.json(result)
+    })
+  }
+];
